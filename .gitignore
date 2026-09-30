@@ -9,3 +9,6 @@ Thumbs.db
 *.swp
 *.swo
 *~
+
+## Variables de entorno
+Vasher/BREATHS.json
