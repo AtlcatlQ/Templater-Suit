@@ -11,6 +11,27 @@ const time = (from = "") => from ? moment(from, "HH:mm", false) : moment();
 module.exports = function (tp) {
     const obAPI = tp.user.obAPI();
     const { fail, attempt } = obAPI;
+
+    async function pickFrom({
+        items = [],
+        filter,
+        multiple = false,
+        abortOnCancel = false,
+        labels = (item) => item.path,
+        ...options
+    } = {}) {
+        const values = typeof filter === "function" ? items.filter(filter) : items;
+        const optionsList = typeof labels === "function" ? values.map(labels) : labels;
+        const picker = multiple ? simpleTP.multi : simpleTP.suggester;
+
+        return await picker({
+            abortOnCancel,
+            ...options,
+            options: optionsList,
+            values,
+        });
+    }
+
     const simpleTP = {
         // TEMPLATER
 
@@ -118,6 +139,27 @@ module.exports = function (tp) {
             fallback,
             fallbackMessage,
             error,
+        }),
+
+        // Vault selectors
+        "pickFolder": async (options = {}) => await pickFrom({
+            placeholder: "Selecciona una carpeta...",
+            ...options,
+            items: tp.app.vault.getAllFolders(),
+        }),
+        "pickFile": async (options = {}) => await pickFrom({
+            placeholder: "Selecciona un archivo...",
+            ...options,
+            items: tp.app.vault.getFiles(),
+        }),
+        "pickNote": async (options = {}) => await pickFrom({
+            placeholder: "Selecciona una nota...",
+            ...options,
+            items: tp.app.vault.getMarkdownFiles(),
+        }),
+        "pickFileBy": async ({ items = tp.app.vault.getFiles(), ...options } = {}) => await pickFrom({
+            ...options,
+            items,
         }),
         "confirm": async ({
             placeholder = "¿Sí o No?",
