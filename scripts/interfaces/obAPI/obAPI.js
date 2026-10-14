@@ -40,7 +40,7 @@ const normalizePath = (path = "") => {
 const pathInfo = (path = "") => {
     const regex = /^(?:(?<folder>.*)[\\/])?(?<name>[^\\/]+?)(?:\.(?<extension>[^.\\/]+))?$/;
     if (!regex.test(path)) {
-        fail(`La ruta "${path}" no es válida.`);
+        fail(`La ruta de archivo "${path}" no es válida.`);
     }
     let groups = regex.exec(path)?.groups || {};
     if (!groups.folder) { groups.folder = ""; }
@@ -72,6 +72,28 @@ const normalizeFolder = (folder = "") => {
     return (!normalized || normalized === ".") ? "" : normalized;
 };
 
+const validateCollisionOptions = ({ overwrite = false, increment = false } = {}) => {
+    if (overwrite && increment) {
+        fail(`Las opciones "overwrite" e "increment" son mutuamente excluyentes.`);
+    }
+};
+
+const incrementedPath = (path = "") => {
+    const { folder, name, extension } = pathInfo(path);
+    const normalizedExtension = extension || "md";
+    const suffix = name.match(/ \((\d+)\)$/);
+    const baseName = name.replace(/ \(\d+\)$/, "");
+    const firstIndex = suffix ? Number(suffix[1]) + 1 : 1;
+    for (let index = firstIndex; ; index++) {
+        const candidate = parsePath({
+            folder,
+            name: `${baseName} (${index})`,
+            extension: normalizedExtension,
+        });
+        if (!ObAPI.file(candidate)) { return candidate; }
+    }
+};
+
 // API de Obsidian Simplificada.
 const ObAPI = {
     // STORAGE
@@ -97,72 +119,109 @@ const ObAPI = {
     "attempt": attempt,
 
     // CONSTRUCTORS
-    "create": async ({ path = "", data = "", options = {} } = {}) => {
+    "create": async ({ path = "", data = "", options = {}, overwrite = false, increment = false } = {}) => {
+        validateCollisionOptions({ overwrite, increment });
         const { folder, name, extension } = pathInfo(path);
-        if (!ObAPI.folder(folder)) { await ObAPI.createFolder(folder); }
         const newPath = parsePath({ folder, name, extension: extension || "md" });
+        if (increment) {
+            const incremented = incrementedPath(newPath);
+            await ObAPI.createFolder({ path: folder });
+            return await vault.create(incremented, data, options);
+        }
+        const existingFile = ObAPI.file(newPath);
+        if (existingFile) {
+            if (!overwrite) { fail(`El archivo "${newPath}" ya existe.`); }
+            await vault.modify(existingFile, data, options);
+            return existingFile;
+        }
+        await ObAPI.createFolder({ path: folder });
         return await vault.create(newPath, data, options);
     },
 
-    "createFolder": async (path = "") => {
+    "createFolder": async ({ path = "", notice = false } = {}) => {
         path = normalizePath(path);
         if (!path) {
-            new Notice(`Carpeta no proporcionada.`, 3000);
             return ObAPI.folder("");
         }
+        const existed = Boolean(ObAPI.folder(path));
         const folders = path.split("/").filter(Boolean);
         for (let i = 1; i <= folders.length; i++) {
             const folder = folders.slice(0, i).join("/");
             if (!ObAPI.folder(folder)) {
                 await vault.createFolder(folder);
-            } else if (i === folders.length) {
-                new Notice(`La carpeta "${path}" ya existe.`, 3000);
             }
+        }
+        if (notice && !existed) {
+            new Notice(`Carpeta creada: "${path}".`, 3000);
         }
         return ObAPI.folder(path);
     },
 
     // OPERATIONS
-    "copy": async ({ source = "", destination = "" } = {}) => {
+    "copy": async ({ source = "", destination = "", overwrite = false, increment = false } = {}) => {
+        validateCollisionOptions({ overwrite, increment });
         const fileObject = requireFile(source);
         if (!destination.trim()) {
-            let { folder, name, extension } = pathInfo(fileObject.path);
-            extension = extension || "md";
-            for (let n = 1; ; n++) {
-                destination = parsePath({ folder, name: `${name}${n}`, extension });
-                if (!ObAPI.file(destination)) { break; }
-            }
-        } else if (requirePath(destination) === requirePath(source)) {
-            new Notice(`El destino es el mismo que el origen.`, 3000);
-            return fileObject;
+            destination = fileObject.path;
+            increment = true;
         }
         const { folder, name, extension } = pathInfo(destination);
-        if (!ObAPI.folder(folder)) { await ObAPI.createFolder(folder); }
         const newPath = parsePath({ folder, name, extension: extension || "md" });
-        await vault.copy(fileObject, newPath);
-        return requireFile(newPath);
+        destination = increment ? incrementedPath(newPath) : newPath;
+        if (!increment && newPath === requirePath(source)) {
+            new Notice(`La copia no se realizó: el destino es el mismo que el origen.`, 3000);
+            return fileObject;
+        }
+        if (ObAPI.folder(destination)) {
+            fail(`El destino "${destination}" es una carpeta.`);
+        }
+        const existingFile = ObAPI.file(destination);
+        if (existingFile && overwrite) {
+            await vault.modify(existingFile, await vault.read(fileObject));
+            return existingFile;
+        }
+        if (existingFile) {
+            fail(`El archivo "${destination}" ya existe.`);
+        }
+        await ObAPI.createFolder({ path: folder });
+        await vault.copy(fileObject, destination);
+        return requireFile(destination);
     },
 
     // Rename
-    "relocate": async ({ source = "", newPath = "" } = {}) => {
+    "relocate": async ({ source = "", newPath = "", overwrite = false, increment = false } = {}) => {
+        validateCollisionOptions({ overwrite, increment });
         const fileObject = requireFile(source);
         let { folder, name, extension } = pathInfo(requirePath(newPath));
-        if (!ObAPI.folder(folder)) { await ObAPI.createFolder(folder); }
         if (!extension) { extension = fileObject.extension || "md"; }
         newPath = parsePath({ folder, name, extension });
-        return await fileManager.renameFile(fileObject, newPath);
+        if (increment) { newPath = incrementedPath(newPath); }
+        if (ObAPI.folder(newPath)) {
+            fail(`El destino "${newPath}" es una carpeta.`);
+        }
+        const existingFile = ObAPI.file(newPath);
+        if (existingFile && existingFile.path !== fileObject.path) {
+            if (!overwrite) { fail(`El archivo "${newPath}" ya existe.`); }
+            await vault.delete(existingFile);
+        }
+        if (newPath === fileObject.path) { return fileObject; }
+        await ObAPI.createFolder({ path: folder });
+        await fileManager.renameFile(fileObject, newPath);
+        return requireFile(newPath);
     },
-    "move": async ({ source = "", folder = "" } = {}) => {
+    "move": async ({ source = "", folder = "", overwrite = false, increment = false } = {}) => {
         // Sirve únicamente para cambiar la carpeta del archivo. No el nombre del archivo.
+        validateCollisionOptions({ overwrite, increment });
         const fileObject = requireFile(source);
         let { basename: name, extension } = fileObject;
         folder = normalizeFolder(folder);
         const newPath = parsePath({ folder, name, extension });
-        return await ObAPI.relocate({ source, newPath });
+        return await ObAPI.relocate({ source, newPath, overwrite, increment });
     },
-    "rename": async ({ source = "", title = "" } = {}) => {
+    "rename": async ({ source = "", title = "", overwrite = false, increment = false } = {}) => {
         // Preferible cuando solo se desea cambiar el nombre del archivo.
         // Sin embargo, soporta también cambiar la carpeta del archivo.
+        validateCollisionOptions({ overwrite, increment });
         const fileObject = requireFile(source);
         let { basename: name, parent, extension } = fileObject;
         let folder = normalizeFolder(parent?.path ?? "");
@@ -173,7 +232,7 @@ const ObAPI = {
             extension = titleInfo.extension || extension;
         }
         const newPath = parsePath({ folder, name, extension });
-        return await ObAPI.relocate({ source, newPath });
+        return await ObAPI.relocate({ source, newPath, overwrite, increment });
     },
 
     // Delete
