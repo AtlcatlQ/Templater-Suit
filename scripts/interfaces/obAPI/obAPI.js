@@ -37,6 +37,34 @@ const normalizePath = (path = "") => {
         .replace(/^\/+|\/+$/g, "");
 };
 
+const resolvePath = ({ path = "", basePath = "" } = {}) => {
+    const normalizeSeparators = (value = "") => String(value ?? "")
+        .normalize("NFC")
+        .replace(/\\/g, "/");
+    const requestedPath = normalizeSeparators(path);
+    const requestedBasePath = normalizeSeparators(basePath);
+    const isRootPath = requestedPath.startsWith("/");
+    const segments = (isRootPath
+        ? requestedPath
+        : `${requestedBasePath}/${requestedPath}`
+    ).split("/");
+    const resolvedSegments = [];
+
+    for (const segment of segments) {
+        if (!segment || segment === ".") { continue; }
+        if (segment === "..") {
+            if (!resolvedSegments.length) {
+                throw new Error("La ruta intenta salir de la raíz de la vault.");
+            }
+            resolvedSegments.pop();
+            continue;
+        }
+        resolvedSegments.push(segment);
+    }
+
+    return resolvedSegments.join("/");
+};
+
 const pathInfo = (path = "") => {
     const regex = /^(?:(?<folder>.*)[\\/])?(?<name>[^\\/]+?)(?:\.(?<extension>[^.\\/]+))?$/;
     if (!regex.test(path)) {
@@ -112,6 +140,7 @@ const ObAPI = {
 
     // path helpers
     "normalizePath": normalizePath,
+    "resolvePath": resolvePath,
     "pathInfo": pathInfo,
     "parsePath": parsePath,
     "requirePath": requirePath,
