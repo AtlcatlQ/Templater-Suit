@@ -87,8 +87,11 @@ const parsePath = ({ folder = "", name, extension = "" } = {}) => {
 
 const requirePath = (path = "") => parsePath(pathInfo(path));
 
-const requireFile = (path = "") => {
-    const fileObject = vault.getFileByPath(requirePath(path.trim()));
+const resolve = ({ path = "", basePath = "" } = {}) => resolvePath({ path: requirePath(path.trim()), basePath });
+
+const requireFile = ({ path = "", basePath = "" } = {}) => {
+    const resolvedPath = resolve({ path, basePath });
+    const fileObject = vault.getFileByPath(resolvedPath);
     if (!fileObject) {
         fail(`El archivo "${path}" no existe.`);
     }
@@ -118,7 +121,7 @@ const incrementedPath = (path = "") => {
             name: `${baseName} (${index})`,
             extension: normalizedExtension,
         });
-        if (!ObAPI.file(candidate)) { return candidate; }
+        if (!ObAPI.file({ path: candidate })) { return candidate; }
     }
 };
 
@@ -130,13 +133,13 @@ const ObAPI = {
     "save": (key, data) => app.saveLocalStorage(key, data),
 
     // GETTERS (Archivos y Carpetas)
-    "file": (path = "") => vault.getFileByPath(requirePath(path.trim())),
-    "folder": (path = "") => {
-        const folder = normalizeFolder(path);
+    "file": ({ path = "", basePath = "" } = {}) => vault.getFileByPath(resolve({ path, basePath })),
+    "folder": ({ path = "", basePath = "" } = {}) => {
+        const folder = normalizeFolder(resolvePath({ path, basePath }));
         return folder === "" ? vault.getRoot() : vault.getFolderByPath(folder);
     },
     "root": () => vault.getRoot(),
-    "content": async (path = "") => await vault.read(requireFile(path)),
+    "content": async ({ path = "", basePath = "" } = {}) => await vault.read(requireFile({ path, basePath })),
 
     // path helpers
     "normalizePath": normalizePath,
@@ -148,8 +151,9 @@ const ObAPI = {
     "attempt": attempt,
 
     // CONSTRUCTORS
-    "create": async ({ path = "", data = "", options = {}, overwrite = false, increment = false } = {}) => {
+    "create": async ({ path = "", data = "", options = {}, overwrite = false, increment = false, basePath = "" } = {}) => {
         validateCollisionOptions({ overwrite, increment });
+        path = resolvePath({ path, basePath });
         const { folder, name, extension } = pathInfo(path);
         const newPath = parsePath({ folder, name, extension: extension || "md" });
         if (increment) {
@@ -157,7 +161,7 @@ const ObAPI = {
             await ObAPI.createFolder({ path: folder });
             return await vault.create(incremented, data, options);
         }
-        const existingFile = ObAPI.file(newPath);
+        const existingFile = ObAPI.file({ path: newPath });
         if (existingFile) {
             if (!overwrite) { fail(`El archivo "${newPath}" ya existe.`); }
             await vault.modify(existingFile, data, options);
@@ -167,44 +171,46 @@ const ObAPI = {
         return await vault.create(newPath, data, options);
     },
 
-    "createFolder": async ({ path = "", notice = false } = {}) => {
-        path = normalizePath(path);
+    "createFolder": async ({ path = "", notice = false, basePath = "" } = {}) => {
+        path = resolvePath({ path, basePath });
         if (!path) {
-            return ObAPI.folder("");
+        return ObAPI.folder({ path: "" });
         }
-        const existed = Boolean(ObAPI.folder(path));
+        const existed = Boolean(ObAPI.folder({ path }));
         const folders = path.split("/").filter(Boolean);
         for (let i = 1; i <= folders.length; i++) {
             const folder = folders.slice(0, i).join("/");
-            if (!ObAPI.folder(folder)) {
+            if (!ObAPI.folder({ path: folder })) {
                 await vault.createFolder(folder);
             }
         }
         if (notice && !existed) {
             new Notice(`Carpeta creada: "${path}".`, 3000);
         }
-        return ObAPI.folder(path);
+        return ObAPI.folder({ path });
     },
 
     // OPERATIONS
-    "copy": async ({ source = "", destination = "", overwrite = false, increment = false } = {}) => {
+    "copy": async ({ source = "", destination = "", overwrite = false, increment = false, basePath = "" } = {}) => {
         validateCollisionOptions({ overwrite, increment });
-        const fileObject = requireFile(source);
+        const sourcePath = resolve({ path: source, basePath });
+        const fileObject = requireFile({ path: sourcePath });
         if (!destination.trim()) {
             destination = fileObject.path;
             increment = true;
         }
+        destination = resolvePath({ path: destination, basePath });
         const { folder, name, extension } = pathInfo(destination);
         const newPath = parsePath({ folder, name, extension: extension || "md" });
         destination = increment ? incrementedPath(newPath) : newPath;
-        if (!increment && newPath === requirePath(source)) {
+        if (!increment && newPath === sourcePath) {
             new Notice(`La copia no se realizó: el destino es el mismo que el origen.`, 3000);
             return fileObject;
         }
-        if (ObAPI.folder(destination)) {
+        if (ObAPI.folder({ path: destination })) {
             fail(`El destino "${destination}" es una carpeta.`);
         }
-        const existingFile = ObAPI.file(destination);
+        const existingFile = ObAPI.file({ path: destination });
         if (existingFile && overwrite) {
             await vault.modify(existingFile, await vault.read(fileObject));
             return existingFile;
@@ -214,21 +220,22 @@ const ObAPI = {
         }
         await ObAPI.createFolder({ path: folder });
         await vault.copy(fileObject, destination);
-        return requireFile(destination);
+        return requireFile({ path: destination });
     },
 
     // Rename
-    "relocate": async ({ source = "", newPath = "", overwrite = false, increment = false } = {}) => {
+    "relocate": async ({ source = "", newPath = "", overwrite = false, increment = false, basePath = "" } = {}) => {
         validateCollisionOptions({ overwrite, increment });
-        const fileObject = requireFile(source);
-        let { folder, name, extension } = pathInfo(requirePath(newPath));
+        const sourcePath = resolve({ path: source, basePath });
+        const fileObject = requireFile({ path: sourcePath });
+        let { folder, name, extension } = pathInfo(resolvePath({ path: newPath, basePath }));
         if (!extension) { extension = fileObject.extension || "md"; }
         newPath = parsePath({ folder, name, extension });
         if (increment) { newPath = incrementedPath(newPath); }
-        if (ObAPI.folder(newPath)) {
+        if (ObAPI.folder({ path: newPath })) {
             fail(`El destino "${newPath}" es una carpeta.`);
         }
-        const existingFile = ObAPI.file(newPath);
+        const existingFile = ObAPI.file({ path: newPath });
         if (existingFile && existingFile.path !== fileObject.path) {
             if (!overwrite) { fail(`El archivo "${newPath}" ya existe.`); }
             await vault.delete(existingFile);
@@ -236,22 +243,23 @@ const ObAPI = {
         if (newPath === fileObject.path) { return fileObject; }
         await ObAPI.createFolder({ path: folder });
         await fileManager.renameFile(fileObject, newPath);
-        return requireFile(newPath);
+        return requireFile({ path: newPath });
     },
-    "move": async ({ source = "", folder = "", overwrite = false, increment = false } = {}) => {
+    "move": async ({ source = "", folder = "", overwrite = false, increment = false, basePath = "" } = {}) => {
         // Sirve únicamente para cambiar la carpeta del archivo. No el nombre del archivo.
         validateCollisionOptions({ overwrite, increment });
-        const fileObject = requireFile(source);
+        const fileObject = requireFile({ path: source, basePath });
         let { basename: name, extension } = fileObject;
         folder = normalizeFolder(folder);
         const newPath = parsePath({ folder, name, extension });
-        return await ObAPI.relocate({ source, newPath, overwrite, increment });
+        return await ObAPI.relocate({ source, newPath, overwrite, increment, basePath });
     },
-    "rename": async ({ source = "", title = "", overwrite = false, increment = false } = {}) => {
+    "rename": async ({ source = "", title = "", overwrite = false, increment = false, basePath = "" } = {}) => {
         // Preferible cuando solo se desea cambiar el nombre del archivo.
         // Sin embargo, soporta también cambiar la carpeta del archivo.
         validateCollisionOptions({ overwrite, increment });
-        const fileObject = requireFile(source);
+        const sourcePath = resolve({ path: source, basePath });
+        const fileObject = requireFile({ path: sourcePath });
         let { basename: name, parent, extension } = fileObject;
         let folder = normalizeFolder(parent?.path ?? "");
         if (title !== "") {
@@ -261,18 +269,18 @@ const ObAPI = {
             extension = titleInfo.extension || extension;
         }
         const newPath = parsePath({ folder, name, extension });
-        return await ObAPI.relocate({ source, newPath, overwrite, increment });
+        return await ObAPI.relocate({ source: sourcePath, newPath, overwrite, increment });
     },
 
     // Delete
-    "trash": async (path) => await fileManager.trashFile(requireFile(path)),
-    "delete": async (path) => await vault.delete(requireFile(path)),
+    "trash": async ({ path = "", basePath = "" } = {}) => await fileManager.trashFile(requireFile({ path, basePath })),
+    "delete": async ({ path = "", basePath = "" } = {}) => await vault.delete(requireFile({ path, basePath })),
 
     // Modify
-    "rewrite": async ({ path = "", data = "", options = {} } = {}) => await vault.modify(requireFile(path), data, options),
-    "metadata": async ({ path = "", fn = (frontmatter) => { } } = {}) => await fileManager.processFrontMatter(requireFile(path), fn),
-    "append": async ({ path = "", data = "", options = {} } = {}) => await vault.append(requireFile(path), data, options),
-    "process": async ({ path = "", fn = (data) => { }, options = {} } = {}) => await vault.process(requireFile(path), fn, options),
+    "rewrite": async ({ path = "", data = "", options = {}, basePath = "" } = {}) => await vault.modify(requireFile({ path, basePath }), data, options),
+    "metadata": async ({ path = "", fn = (frontmatter) => { }, basePath = "" } = {}) => await fileManager.processFrontMatter(requireFile({ path, basePath }), fn),
+    "append": async ({ path = "", data = "", options = {}, basePath = "" } = {}) => await vault.append(requireFile({ path, basePath }), data, options),
+    "process": async ({ path = "", fn = (data) => { }, options = {}, basePath = "" } = {}) => await vault.process(requireFile({ path, basePath }), fn, options),
 };
 
 module.exports = function () {

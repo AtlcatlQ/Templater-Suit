@@ -7,7 +7,7 @@
 module.exports = function (tp) {
     const {
         content, rewrite, copy: copyFile, file, create: createFile,
-        pathInfo, parsePath, requirePath,
+        pathInfo, parsePath, requirePath, resolvePath,
     } = tp.user.obAPI();
 
     const fail = (message) => {
@@ -37,8 +37,8 @@ module.exports = function (tp) {
         #data;
         #synced;
 
-        constructor({ path = "", data = {}, replacer = null, spaces = 2, readyPath = false } = {}) {
-            this.path = readyPath ? path : requireJSONPath(path);
+        constructor({ path = "", data = {}, replacer = null, spaces = 2, readyPath = false, basePath = "" } = {}) {
+            this.path = readyPath ? path : resolvePath({ path: requireJSONPath(path), basePath });
             this.#data = structuredClone(data);
             this.replacer = replacer ?? null;
             this.spaces = spaces ?? 2;
@@ -67,9 +67,9 @@ module.exports = function (tp) {
         }
 
         // --- Estáticos ---
-        static async create({ path = "", data = {}, replacer = null, spaces = 2 } = {}) {
-            const db = new Argo({ path, data, replacer, spaces });
-            if (file(db.path)) { fail(`El archivo "${db.path}" ya existe.`); }
+        static async create({ path = "", data = {}, replacer = null, spaces = 2, basePath = "" } = {}) {
+            const db = new Argo({ path, data, replacer, spaces, basePath });
+            if (file({ path: db.path })) { fail(`El archivo "${db.path}" ya existe.`); }
             await createFile({
                 path: db.path,
                 data: JSON.stringify(db.#data, db.replacer, db.spaces),
@@ -77,12 +77,12 @@ module.exports = function (tp) {
             return db;
         }
 
-        static async read({ path = "", ensure = false, data = {}, replacer = null, spaces = 2 } = {}) {
-            path = requireJSONPath(path);
-            if (file(path)) {
+        static async read({ path = "", ensure = false, data = {}, replacer = null, spaces = 2, basePath = "" } = {}) {
+            path = resolvePath({ path: requireJSONPath(path), basePath });
+            if (file({ path })) {
                 return new Argo({
                     path,
-                    data: parse(path, await content(path)),
+                    data: parse(path, await content({ path })),
                     replacer,
                     spaces,
                     readyPath: true,
@@ -92,14 +92,18 @@ module.exports = function (tp) {
             fail(`El archivo "${path}" no existe.`);
         }
 
-        static exists(path = "") {
-            return Boolean(file(requireJSONPath(path)));
+        static exists({ path = "", basePath = "" } = {}) {
+            return Boolean(file({ path: resolvePath({ path: requireJSONPath(path), basePath }) }));
         }
 
-        static async copy(source, destination = "", strict = false) {
+        static async copy({ source = "", destination = "", strict = false, basePath = "" } = {}) {
             const fromPath = async (path) => {
                 path = requireJSONPath(path);
-                if (!file(path)) { fail(`El archivo "${path}" no existe.`); }
+                path = resolvePath({ path, basePath });
+                if (!file({ path })) { fail(`El archivo "${path}" no existe.`); }
+                destination = destination.trim()
+                    ? resolvePath({ path: destination, basePath })
+                    : destination;
                 const copied = await copyFile({ source: path, destination });
                 return Argo.read({ path: copied.path });
             };
@@ -109,6 +113,9 @@ module.exports = function (tp) {
                     if (!(await db.checkSync())) {
                         fail(`La base "${db.path}" no está sincronizada con el disco.`);
                     }
+                    destination = destination.trim()
+                        ? resolvePath({ path: destination, basePath })
+                        : destination;
                     const copied = await copyFile({ source: db.path, destination });
                     return new Argo({
                         path: copied.path,
@@ -121,12 +128,12 @@ module.exports = function (tp) {
 
                 let dest = destination.trim();
                 if (dest) {
-                    dest = requireJSONPath(dest);
+                    dest = resolvePath({ path: requireJSONPath(dest), basePath });
                 } else {
                     const { folder, name, extension = "json" } = pathInfo(db.path);
                     for (let n = 1; ; n++) {
                         dest = parsePath({ folder, name: `${name}${n}`, extension });
-                        if (!file(dest)) { break; }
+                        if (!file({ path: dest })) { break; }
                     }
                 }
 
@@ -176,12 +183,12 @@ module.exports = function (tp) {
         }
 
         async checkSync() {
-            if (!file(this.path)) {
+            if (!file({ path: this.path })) {
                 this.#synced = false;
                 return this.#synced;
             }
             try {
-                const disk = JSON.parse(await content(this.path));
+                const disk = JSON.parse(await content({ path: this.path }));
                 this.#synced = JSON.stringify(disk, this.replacer) === JSON.stringify(this.#data, this.replacer);
             } catch {
                 this.#synced = false;
@@ -339,7 +346,7 @@ module.exports = function (tp) {
         // --- Archivo ---
         async reload() {
             if (await this.checkSync()) { return this; }
-            this.#data = parse(this.path, await content(this.path));
+            this.#data = parse(this.path, await content({ path: this.path }));
             this.#synced = true;
             return this;
         }
@@ -347,7 +354,7 @@ module.exports = function (tp) {
         async write(force = false) {
             if (!force && await this.checkSync()) { return this; }
             const payload = JSON.stringify(this.#data, this.replacer, this.spaces);
-            if (file(this.path)) {
+            if (file({ path: this.path })) {
                 await rewrite({ path: this.path, data: payload });
             } else {
                 await createFile({ path: this.path, data: payload });
@@ -356,8 +363,8 @@ module.exports = function (tp) {
             return this;
         }
 
-        async copy(destination = "", strict = false) {
-            return Argo.copy(this, destination, strict);
+        async copy({ destination = "", strict = false, basePath = "" } = {}) {
+            return Argo.copy({ source: this, destination, strict, basePath });
         }
     };
 
