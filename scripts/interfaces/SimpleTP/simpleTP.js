@@ -174,35 +174,6 @@ module.exports = function (tp) {
             initial,
         }),
 
-        // OBSIDIAN
-
-        // Storage
-        "load": obAPI.load,
-        "save": obAPI.save,
-        // Getters (No se exponen directamente, ya que todo se realiza en el archivo target.)
-        // Constructors (Los archivos se crean desde el propio Obsidian, no desde un script.)
-
-        // Operations
-        "copy": async (path = "") => await obAPI.copy({ source: simpleTP["target"].path, destination: path }),
-
-        // rename
-        "relocate": async (newPath = "") => await obAPI.relocate({ source: simpleTP["target"].path, newPath }),
-        "move": async (folder = "") => await obAPI.move({ source: simpleTP["target"].path, folder }),
-        "rename": async (title = "") => await obAPI.rename({ source: simpleTP["target"].path, title }),
-
-        // delete
-        "delete": async () => await obAPI.delete(simpleTP["target"].path),
-        "trash": async () => await obAPI.trash(simpleTP["target"].path),
-
-        // modify
-        "rewrite": async (data = "") => await obAPI.rewrite({ path: simpleTP["target"].path, data }),
-        "metadata": async (fn = (frontmatter) => { }) => await obAPI.metadata({ path: simpleTP["target"].path, fn }),
-        "append": async (data = "") => await obAPI.append({ path: simpleTP["target"].path, data }),
-        "process": async (fn = (data) => { }, options = {}) => await obAPI.process({ path: simpleTP["target"].path, fn, options }),
-
-        // Librerías Personalizadas
-        "Argo": tp.user.Argo(tp),
-        "Vasher": async () => await tp.user.Vasher(tp),
     };
     return simpleTP;
 };
