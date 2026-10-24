@@ -196,10 +196,12 @@ const ObAPI = {
         const sourcePath = resolve({ path: source, basePath });
         const fileObject = requireFile({ path: sourcePath });
         if (!destination.trim()) {
+            // El destino derivado ya está resuelto desde la raíz de la vault: no se recombina con basePath.
             destination = fileObject.path;
             increment = true;
+        } else {
+            destination = resolvePath({ path: destination, basePath });
         }
-        destination = resolvePath({ path: destination, basePath });
         const { folder, name, extension } = pathInfo(destination);
         const newPath = parsePath({ folder, name, extension: extension || "md" });
         destination = increment ? incrementedPath(newPath) : newPath;
