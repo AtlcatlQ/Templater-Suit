@@ -281,10 +281,15 @@ const ObAPI = {
         let { basename: name, parent, extension } = fileObject;
         let folder = normalizeFolder(parent?.path ?? "");
         if (title !== "") {
-            const titleInfo = pathInfo(requirePath(title));
+            const titleInfo = resolveUserPath({
+                path: title,
+                basePath,
+                defaultExt: "md",
+                extensionFallbackFrom: fileObject,
+            });
             folder = titleInfo.folder || folder;
-            name = titleInfo.name || name;
-            extension = titleInfo.extension || extension;
+            name = titleInfo.name;
+            extension = titleInfo.extension;
         }
         const newPath = parsePath({ folder, name, extension });
         return await ObAPI.relocate({ source: sourcePath, newPath, overwrite, increment });
