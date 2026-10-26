@@ -31,6 +31,11 @@ module.exports = function (tp) {
         }
     };
 
+    const isEmptyCollection = (data) => {
+        if (Array.isArray(data)) { return data.length === 0; }
+        return typeof data === "object" && data !== null && Object.keys(data).length === 0;
+    };
+
     // TODO: boceto/esquema embebido (`sketch`) — clave reservada + validación frente a entradas; más adelante.
 
     const Argo = class {
@@ -361,6 +366,15 @@ module.exports = function (tp) {
             if (!force && await this.checkSync()) { return this; }
             const payload = JSON.stringify(this.#data, this.replacer, this.spaces);
             if (file({ path: this.path })) {
+                let existingIsEmpty = false;
+                try {
+                    existingIsEmpty = isEmptyCollection(JSON.parse(await content({ path: this.path })));
+                } catch {
+                    existingIsEmpty = false;
+                }
+                if (isEmptyCollection(this.#data) && !existingIsEmpty) {
+                    new Notice(`Argo.write: se va a persistir una colección vacía sobre "${this.path}"`, 5000);
+                }
                 await rewrite({ path: this.path, data: payload });
             } else {
                 await createFile({ path: this.path, data: payload });
