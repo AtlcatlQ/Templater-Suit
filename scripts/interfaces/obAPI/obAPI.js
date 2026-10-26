@@ -125,6 +125,19 @@ const incrementedPath = (path = "") => {
     }
 };
 
+const resolveUserPath = ({ path = "", basePath = "", defaultExt = "md", extensionFallbackFrom = null } = {}) => {
+    const resolved = resolvePath({ path, basePath });
+    let { folder, name, extension } = pathInfo(resolved);
+    if (!extension && extensionFallbackFrom && extensionFallbackFrom.extension) {
+        extension = extensionFallbackFrom.extension;
+    }
+    if (!extension) {
+        extension = defaultExt;
+    }
+    const parsed = parsePath({ folder, name, extension });
+    return { folder, name, extension, parsed };
+};
+
 // API de Obsidian Simplificada.
 const ObAPI = {
     // STORAGE
@@ -153,9 +166,7 @@ const ObAPI = {
     // CONSTRUCTORS
     "create": async ({ path = "", data = "", options = {}, overwrite = false, increment = false, basePath = "" } = {}) => {
         validateCollisionOptions({ overwrite, increment });
-        path = resolvePath({ path, basePath });
-        const { folder, name, extension } = pathInfo(path);
-        const newPath = parsePath({ folder, name, extension: extension || "md" });
+        const { folder, parsed: newPath } = resolveUserPath({ path, basePath, defaultExt: "md" });
         if (increment) {
             const incremented = incrementedPath(newPath);
             await ObAPI.createFolder({ path: folder });
@@ -195,34 +206,39 @@ const ObAPI = {
         validateCollisionOptions({ overwrite, increment });
         const sourcePath = resolve({ path: source, basePath });
         const fileObject = requireFile({ path: sourcePath });
+        let targetPath;
+        let shouldIncrement = increment;
         if (!destination.trim()) {
             // El destino derivado ya está resuelto desde la raíz de la vault: no se recombina con basePath.
-            destination = fileObject.path;
-            increment = true;
+            targetPath = fileObject.path;
+            shouldIncrement = true;
         } else {
-            destination = resolvePath({ path: destination, basePath });
+            const { parsed } = resolveUserPath({ path: destination, basePath, defaultExt: "md" });
+            targetPath = parsed;
         }
-        const { folder, name, extension } = pathInfo(destination);
-        const newPath = parsePath({ folder, name, extension: extension || "md" });
-        destination = increment ? incrementedPath(newPath) : newPath;
-        if (!increment && newPath === sourcePath) {
+        const { folder } = pathInfo(targetPath);
+        let newPath = targetPath;
+        if (shouldIncrement) {
+            newPath = incrementedPath(newPath);
+        }
+        if (!shouldIncrement && newPath === sourcePath) {
             new Notice(`La copia no se realizó: el destino es el mismo que el origen.`, 3000);
             return fileObject;
         }
-        if (ObAPI.folder({ path: destination })) {
-            fail(`El destino "${destination}" es una carpeta.`);
+        if (ObAPI.folder({ path: newPath })) {
+            fail(`El destino "${newPath}" es una carpeta.`);
         }
-        const existingFile = ObAPI.file({ path: destination });
+        const existingFile = ObAPI.file({ path: newPath });
         if (existingFile && overwrite) {
             await vault.modify(existingFile, await vault.read(fileObject));
             return existingFile;
         }
         if (existingFile) {
-            fail(`El archivo "${destination}" ya existe.`);
+            fail(`El archivo "${newPath}" ya existe.`);
         }
         await ObAPI.createFolder({ path: folder });
-        await vault.copy(fileObject, destination);
-        return requireFile({ path: destination });
+        await vault.copy(fileObject, newPath);
+        return requireFile({ path: newPath });
     },
 
     // Rename
@@ -230,22 +246,22 @@ const ObAPI = {
         validateCollisionOptions({ overwrite, increment });
         const sourcePath = resolve({ path: source, basePath });
         const fileObject = requireFile({ path: sourcePath });
-        let { folder, name, extension } = pathInfo(resolvePath({ path: newPath, basePath }));
-        if (!extension) { extension = fileObject.extension || "md"; }
-        newPath = parsePath({ folder, name, extension });
-        if (increment) { newPath = incrementedPath(newPath); }
-        if (ObAPI.folder({ path: newPath })) {
-            fail(`El destino "${newPath}" es una carpeta.`);
+        const { parsed: targetPathResolved } = resolveUserPath({ path: newPath, basePath, defaultExt: "md", extensionFallbackFrom: fileObject });
+        let targetPath = targetPathResolved;
+        if (increment) { targetPath = incrementedPath(targetPath); }
+        const { folder } = pathInfo(targetPath);
+        if (ObAPI.folder({ path: targetPath })) {
+            fail(`El destino "${targetPath}" es una carpeta.`);
         }
-        const existingFile = ObAPI.file({ path: newPath });
+        const existingFile = ObAPI.file({ path: targetPath });
         if (existingFile && existingFile.path !== fileObject.path) {
-            if (!overwrite) { fail(`El archivo "${newPath}" ya existe.`); }
+            if (!overwrite) { fail(`El archivo "${targetPath}" ya existe.`); }
             await vault.delete(existingFile);
         }
-        if (newPath === fileObject.path) { return fileObject; }
+        if (targetPath === fileObject.path) { return fileObject; }
         await ObAPI.createFolder({ path: folder });
-        await fileManager.renameFile(fileObject, newPath);
-        return requireFile({ path: newPath });
+        await fileManager.renameFile(fileObject, targetPath);
+        return requireFile({ path: targetPath });
     },
     "move": async ({ source = "", folder = "", overwrite = false, increment = false, basePath = "" } = {}) => {
         // Sirve únicamente para cambiar la carpeta del archivo. No el nombre del archivo.
