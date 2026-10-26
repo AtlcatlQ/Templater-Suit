@@ -9,7 +9,7 @@ const date = (from = "") => from ? moment(from, ["YYYY-[Q]Q", "GGGG-[W]WW", "YYY
 const time = (from = "") => from ? moment(from, "HH:mm", false) : moment();
 
 module.exports = function (tp) {
-    const obAPI = tp.user.obAPI();
+    const obAPI = tp.user["tS-obAPI"]();
     const { fail, attempt } = obAPI;
 
     async function pickFrom({

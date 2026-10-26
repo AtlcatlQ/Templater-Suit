@@ -8,7 +8,7 @@ module.exports = function (tp) {
     const {
         content, rewrite, copy: copyFile, file, create: createFile,
         pathInfo, parsePath, requirePath, resolvePath,
-    } = tp.user.obAPI();
+    } = tp.user["tS-obAPI"]();
 
     const fail = (message) => {
         new Notice(message, 5000);
