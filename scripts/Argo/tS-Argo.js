@@ -182,6 +182,12 @@ module.exports = function (tp) {
             return this;
         }
 
+        voorhees() {
+            this.#data = this.isArray ? [] : {};
+            this.#synced = false;
+            return this;
+        }
+
         async checkSync() {
             if (!file({ path: this.path })) {
                 this.#synced = false;
