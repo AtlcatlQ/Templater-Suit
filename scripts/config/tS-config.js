@@ -48,16 +48,16 @@ module.exports = function (tp) {
         return config;
     };
 
-    const ask = async (label, initial) => {
-        const answer = await prompt({ label, initial });
+    const ask = async (label) => {
+        const answer = await prompt({ label });
         if (typeof answer !== "string") {
             throw new Error(`tS-config: se canceló o falló la pregunta "${label}".`);
         }
         return answer;
     };
 
-    const askConfirm = async (placeholder, initial) => {
-        const answer = await confirm({ placeholder, initial, abortOnCancel: true });
+    const askConfirm = async (placeholder) => {
+        const answer = await confirm({ placeholder, abortOnCancel: true });
         if (typeof answer !== "boolean") {
             throw new Error(`tS-config: se canceló la confirmación "${placeholder}".`);
         }
@@ -78,27 +78,21 @@ module.exports = function (tp) {
             throw new Error(`tS-config: "${path}" ya existe; se requiere force: true.`);
         }
 
-        const initial = defaults();
         const config = validate({
             abortOnCancel: await askConfirm(
                 "¿Abortar cuando se cancele un selector?",
-                initial.abortOnCancel,
             ),
             noticeOnFolderCreation: await askConfirm(
                 "¿Mostrar una Notice al crear carpetas?",
-                initial.noticeOnFolderCreation,
             ),
             defaultSelectorLimit: Number(await ask(
                 "Límite predeterminado de selectores",
-                String(initial.defaultSelectorLimit),
             )),
             defaultSelectorPlaceholder: await ask(
                 "Placeholder predeterminado de selectores",
-                initial.defaultSelectorPlaceholder,
             ),
             defaultDateFormat: await ask(
                 "Formato predeterminado de fecha",
-                initial.defaultDateFormat,
             ),
         });
 
