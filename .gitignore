@@ -10,5 +10,8 @@ Thumbs.db
 *.swo
 *~
 
+## Configuración local
+/scripts/Templater-Suit/config.json
+
 ## Variables de entorno
 Vasher/BREATHS.json
