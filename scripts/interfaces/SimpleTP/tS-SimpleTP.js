@@ -49,7 +49,7 @@ module.exports = function (tp) {
         // offset es solo para realizar operaciones sobre fechas.
         "quarter": (from = "") => date(from).format("YYYY-[Q]Q"),
         "week": (from = "") => date(from).format("GGGG-[W]WW"),
-        "date": (from = "") => date(from).format("YYYY-MM-DD"),
+        "date": (from = "", format = "YYYY-MM-DD") => date(from).format(format),
         "yesterday": (from = "") => date(from).add(-1, "day").format("YYYY-MM-DD"),
         "tomorrow": (from = "") => date(from).add(1, "day").format("YYYY-MM-DD"),
         "datetime": (from = "") => date(from).format("YYYY-MM-DD[T]HH:mm"),
