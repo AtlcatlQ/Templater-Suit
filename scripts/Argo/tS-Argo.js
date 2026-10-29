@@ -42,6 +42,12 @@ module.exports = function (tp) {
         #data;
         #synced;
 
+        static #noticeOnFolderCreation = false;
+
+        static setNoticeOnFolderCreation(notice) {
+            Argo.#noticeOnFolderCreation = notice;
+        }
+
         constructor({ path = "", data = {}, replacer = null, spaces = 2, readyPath = false, basePath = "" } = {}) {
             this.path = readyPath ? path : resolvePath({ path: requireJSONPath(path), basePath });
             this.#data = structuredClone(data);
@@ -72,17 +78,18 @@ module.exports = function (tp) {
         }
 
         // --- Estáticos ---
-        static async create({ path = "", data = {}, replacer = null, spaces = 2, basePath = "" } = {}) {
+        static async create({ path = "", data = {}, replacer = null, spaces = 2, basePath = "", notice = Argo.#noticeOnFolderCreation } = {}) {
             const db = new Argo({ path, data, replacer, spaces, basePath });
             if (file({ path: db.path })) { fail(`El archivo "${db.path}" ya existe.`); }
             await createFile({
                 path: db.path,
                 data: JSON.stringify(db.#data, db.replacer, db.spaces),
+                notice,
             });
             return db;
         }
 
-        static async read({ path = "", ensure = false, data = {}, replacer = null, spaces = 2, basePath = "" } = {}) {
+        static async read({ path = "", ensure = false, data = {}, replacer = null, spaces = 2, basePath = "", notice = Argo.#noticeOnFolderCreation } = {}) {
             path = resolvePath({ path: requireJSONPath(path), basePath });
             if (file({ path })) {
                 return new Argo({
@@ -93,7 +100,7 @@ module.exports = function (tp) {
                     readyPath: true,
                 });
             }
-            if (ensure) { return Argo.create({ path, data, replacer, spaces }); }
+            if (ensure) { return Argo.create({ path, data, replacer, spaces, notice }); }
             fail(`El archivo "${path}" no existe.`);
         }
 
@@ -101,7 +108,7 @@ module.exports = function (tp) {
             return Boolean(file({ path: resolvePath({ path: requireJSONPath(path), basePath }) }));
         }
 
-        static async copy({ source = "", destination = "", strict = false, basePath = "" } = {}) {
+        static async copy({ source = "", destination = "", strict = false, basePath = "", notice = Argo.#noticeOnFolderCreation } = {}) {
             const fromPath = async (path) => {
                 path = requireJSONPath(path);
                 path = resolvePath({ path, basePath });
@@ -109,7 +116,7 @@ module.exports = function (tp) {
                 destination = destination.trim()
                     ? resolvePath({ path: destination, basePath })
                     : destination;
-                const copied = await copyFile({ source: path, destination });
+                const copied = await copyFile({ source: path, destination, notice });
                 return Argo.read({ path: copied.path });
             };
 
@@ -121,7 +128,7 @@ module.exports = function (tp) {
                     destination = destination.trim()
                         ? resolvePath({ path: destination, basePath })
                         : destination;
-                    const copied = await copyFile({ source: db.path, destination });
+                    const copied = await copyFile({ source: db.path, destination, notice });
                     return new Argo({
                         path: copied.path,
                         data: db.clone(),
@@ -147,6 +154,7 @@ module.exports = function (tp) {
                     data: db.clone(),
                     replacer: db.replacer,
                     spaces: db.spaces,
+                    notice,
                 });
             };
 
@@ -362,7 +370,7 @@ module.exports = function (tp) {
             return this;
         }
 
-        async write(force = false) {
+        async write(force = false, { notice = Argo.#noticeOnFolderCreation } = {}) {
             if (!force && await this.checkSync()) { return this; }
             const payload = JSON.stringify(this.#data, this.replacer, this.spaces);
             if (file({ path: this.path })) {
@@ -377,14 +385,14 @@ module.exports = function (tp) {
                 }
                 await rewrite({ path: this.path, data: payload });
             } else {
-                await createFile({ path: this.path, data: payload });
+                await createFile({ path: this.path, data: payload, notice });
             }
             this.#synced = true;
             return this;
         }
 
-        async copy({ destination = "", strict = false, basePath = "" } = {}) {
-            return Argo.copy({ source: this, destination, strict, basePath });
+        async copy({ destination = "", strict = false, basePath = "", notice = Argo.#noticeOnFolderCreation } = {}) {
+            return Argo.copy({ source: this, destination, strict, basePath, notice });
         }
     };
 
